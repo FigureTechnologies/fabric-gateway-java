@@ -9,6 +9,7 @@ package org.hyperledger.fabric.gateway.impl;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
@@ -48,23 +49,23 @@ public final class ContractImpl implements Contract, AutoCloseable {
     }
 
     @Override
-    public TransactionResponse submitTransaction(String name, String... args) throws ContractException, TimeoutException, InterruptedException {
-        return createTransaction(name).submit(args);
+    public TransactionResponse submitTransaction(UUID correlationId, String name, String... args) throws ContractException, TimeoutException, InterruptedException {
+        return createTransaction(name).submit(correlationId, args);
     }
 
     @Override
-    public TransactionResponse evaluateTransaction(String name, String... args) throws ContractException {
-        return createTransaction(name).evaluate(args);
+    public TransactionResponse evaluateTransaction(UUID correlationId, String name, String... args) throws ContractException {
+        return createTransaction(name).evaluate(correlationId, args);
     }
 
     @Override
-    public TransactionResponse submitTransaction(String name, User userContext, String... args) throws ContractException, TimeoutException, InterruptedException {
-        return createTransaction(name).submit(userContext, args);
+    public TransactionResponse submitTransaction(UUID correlationId, String name, User userContext, String... args) throws ContractException, TimeoutException, InterruptedException {
+        return createTransaction(name).submit(correlationId, userContext, args);
     }
 
     @Override
-    public TransactionResponse evaluateTransaction(String name, User userContext, String... args) throws ContractException {
-        return createTransaction(name).evaluate(userContext, args);
+    public TransactionResponse evaluateTransaction(UUID correlationId, String name, User userContext, String... args) throws ContractException {
+        return createTransaction(name).evaluate(correlationId, userContext, args);
     }
 
     @Override

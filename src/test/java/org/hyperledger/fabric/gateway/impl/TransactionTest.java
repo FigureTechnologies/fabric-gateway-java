@@ -13,6 +13,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -110,7 +111,7 @@ public class TransactionTest {
         ProposalResponse noResponse = testUtils.newUnavailableProposalResponse("No response");
         when(channel.queryByChaincode(any(), anyCollection())).thenReturn(Collections.singletonList(noResponse));
 
-        assertThatThrownBy(() -> contract.evaluateTransaction("txn", "arg1"))
+        assertThatThrownBy(() -> contract.evaluateTransaction(UUID.randomUUID(),"txn", "arg1"))
                 .isInstanceOf(ContractException.class);
     }
 
@@ -119,7 +120,7 @@ public class TransactionTest {
         when(failureResponse.getPeer()).thenReturn(peer1);
         when(channel.queryByChaincode(any(), anyCollection())).thenReturn(Collections.singletonList(failureResponse));
 
-        assertThatThrownBy(() -> contract.evaluateTransaction("txn", "arg1"))
+        assertThatThrownBy(() -> contract.evaluateTransaction(UUID.randomUUID(),"txn", "arg1"))
                 .isInstanceOf(GatewayException.class);
     }
 
@@ -130,7 +131,7 @@ public class TransactionTest {
         when(response.getPeer()).thenReturn(peer1);
         when(channel.queryByChaincode(any(), anyCollection())).thenReturn(Collections.singletonList(response));
 
-        TransactionResponse result = contract.evaluateTransaction("txn", "arg1");
+        TransactionResponse result = contract.evaluateTransaction(UUID.randomUUID(),"txn", "arg1");
         assertThat(new String(result.getPayload())).isEqualTo(expected);
     }
 
@@ -141,7 +142,7 @@ public class TransactionTest {
         when(response.getPeer()).thenReturn(peer1);
         when(channel.queryByChaincode(any(), anyCollection())).thenReturn(Collections.singletonList(response));
 
-        TransactionResponse result = contract.createTransaction("txn").setTransient(transientMap).evaluate("arg1");
+        TransactionResponse result = contract.createTransaction("txn").setTransient(transientMap).evaluate(UUID.randomUUID(),"arg1");
         assertThat(new String(result.getPayload())).isEqualTo(expected);
     }
 
@@ -150,7 +151,7 @@ public class TransactionTest {
         List<ProposalResponse> responses = new ArrayList<>();
         when(channel.sendTransactionProposal(any())).thenReturn(responses);
 
-        assertThatThrownBy(() -> contract.submitTransaction("txn", "arg1"))
+        assertThatThrownBy(() -> contract.submitTransaction(UUID.randomUUID(),"txn", "arg1"))
                 .isInstanceOf(GatewayException.class);
     }
 
@@ -158,7 +159,7 @@ public class TransactionTest {
     public void testSubmitUnsuccessfulResponse() throws Exception {
         when(channel.sendTransactionProposal(any())).thenReturn(Collections.singletonList(failureResponse));
 
-        assertThatThrownBy(() -> contract.submitTransaction("txn", "arg1"))
+        assertThatThrownBy(() -> contract.submitTransaction(UUID.randomUUID(),"txn", "arg1"))
                 .isInstanceOf(GatewayException.class);
     }
 
@@ -168,7 +169,7 @@ public class TransactionTest {
         ProposalResponse response = testUtils.newSuccessfulProposalResponse(expected.getBytes());
         when(channel.sendTransactionProposal(any())).thenReturn(Collections.singletonList(response));
 
-        TransactionResponse result = contract.submitTransaction("txn", "arg1");
+        TransactionResponse result = contract.submitTransaction(UUID.randomUUID(),"txn", "arg1");
         assertThat(new String(result.getPayload())).isEqualTo(expected);
     }
 
@@ -180,7 +181,7 @@ public class TransactionTest {
 
         TransactionResponse result = contract.createTransaction("txn")
                 .setTransient(transientMap)
-                .submit("arg1");
+                .submit(UUID.randomUUID(),"arg1");
         assertThat(new String(result.getPayload())).isEqualTo(expected);
     }
 
@@ -190,7 +191,7 @@ public class TransactionTest {
         ProposalResponse response = testUtils.newSuccessfulProposalResponse(expected.getBytes());
         when(channel.sendTransactionProposal(any())).thenReturn(Collections.singletonList(response));
 
-        contract.submitTransaction("txn", "arg1");
+        contract.submitTransaction(UUID.randomUUID(),"txn", "arg1");
 
         verify(commitHandler).waitForEvents(timeout.getTime(), timeout.getTimeUnit());
     }
@@ -201,7 +202,7 @@ public class TransactionTest {
         ProposalResponse goodResponse = testUtils.newSuccessfulProposalResponse(expected.getBytes());
         when(channel.sendTransactionProposal(any())).thenReturn(Arrays.asList(failureResponse, goodResponse));
 
-        contract.submitTransaction("txn", "arg1");
+        contract.submitTransaction(UUID.randomUUID(),"txn", "arg1");
 
         verify(channel).sendTransaction(proposalResponseCaptor.capture(), any(Channel.TransactionOptions.class));
         assertThat(proposalResponseCaptor.getValue()).containsExactly(goodResponse);
@@ -216,7 +217,7 @@ public class TransactionTest {
 
         contract.createTransaction("txn")
                 .setEndorsingPeers(Collections.singletonList(peer2))
-                .submit();
+                .submit(UUID.randomUUID());
 
         verify(channel).sendTransactionProposal(any(TransactionProposalRequest.class), peerCaptor.capture());
         assertThat(peerCaptor.getValue()).containsExactly(peer2);

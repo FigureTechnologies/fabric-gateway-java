@@ -7,6 +7,7 @@
 package org.hyperledger.fabric.gateway;
 
 import java.io.IOException;
+import java.util.UUID;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
@@ -49,7 +50,7 @@ public interface Contract {
 	 * will be evaluated on the endorsing peers and then submitted to the ordering service
 	 * for committing to the ledger.
 	 * This function is equivalent to calling {@code createTransaction(name).submit()}.
-	 *
+	 * @param correlationId an ID known by the caller to correlate responses to requests
 	 * @param name Transaction function name.
 	 * @param args Transaction function arguments.
 	 * @return Payload response from the transaction function.
@@ -61,7 +62,7 @@ public interface Contract {
 	 *
 	 * @see <a href="https://hyperledger-fabric.readthedocs.io/en/release-1.4/developapps/application.html#submit-transaction">Developing Fabric Applications - Submit transaction</a>
 	 */
-	TransactionResponse submitTransaction(String name, String... args) throws ContractException, TimeoutException, InterruptedException;
+	TransactionResponse submitTransaction(UUID correlationId, String name, String... args) throws ContractException, TimeoutException, InterruptedException;
 
 	/**
 	 * Submit a transaction to the ledger. The transaction function {@code name}
@@ -69,6 +70,7 @@ public interface Contract {
 	 * for committing to the ledger.
 	 * This function is equivalent to calling {@code createTransaction(name).submit()}.
 	 *
+	 * @param correlationId an ID known by the caller to correlate responses to requests
 	 * @param name Transaction function name.
 	 * @param userContext User context for this request.  Allows caller to set a context
 	 *                    different than the underlying gateway client user context (i.e. an actual
@@ -83,7 +85,7 @@ public interface Contract {
 	 *
 	 * @see <a href="https://hyperledger-fabric.readthedocs.io/en/release-1.4/developapps/application.html#submit-transaction">Developing Fabric Applications - Submit transaction</a>
 	 */
-	TransactionResponse submitTransaction(String name, User userContext, String... args) throws ContractException, TimeoutException, InterruptedException;
+	TransactionResponse submitTransaction(UUID correlationId, String name, User userContext, String... args) throws ContractException, TimeoutException, InterruptedException;
 
 	/**
 	 * Evaluate a transaction function and return its results.
@@ -93,12 +95,13 @@ public interface Contract {
 	 * This is used for querying the world state.
 	 * This function is equivalent to calling {@code createTransaction(name).evaluate()}.
 	 *
+	 * @param correlationId an ID known by the caller to correlate responses to requests
 	 * @param name Transaction function name.
 	 * @param args Transaction function arguments.
 	 * @return Payload response from the transaction function.
 	 * @throws ContractException if no peers are reachable or an error response is returned.
 	 */
-	TransactionResponse evaluateTransaction(String name, String... args) throws ContractException;
+	TransactionResponse evaluateTransaction(UUID correlationId, String name, String... args) throws ContractException;
 
 	/**
 	 * Evaluate a transaction function and return its results.
@@ -108,6 +111,7 @@ public interface Contract {
 	 * This is used for querying the world state.
 	 * This function is equivalent to calling {@code createTransaction(name).evaluate()}.
 	 *
+	 * @param correlationId an ID known by the caller to correlate responses to requests
 	 * @param name Transaction function name.
 	 * @param userContext User context for this request.  Allows caller to set a context
 	 *                    different than the underlying gateway client user context (i.e. an actual
@@ -116,7 +120,7 @@ public interface Contract {
 	 * @return Payload response from the transaction function.
 	 * @throws ContractException if no peers are reachable or an error response is returned.
 	 */
-	TransactionResponse evaluateTransaction(String name, User userContext, String... args) throws ContractException;
+	TransactionResponse evaluateTransaction(UUID correlationId, String name, User userContext, String... args) throws ContractException;
 
 	/**
 	 * Add a listener to receive all contract events emitted by transactions.

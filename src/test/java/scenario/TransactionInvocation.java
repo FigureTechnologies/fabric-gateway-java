@@ -8,6 +8,7 @@ package scenario;
 
 import java.util.Collection;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.Callable;
 
 import org.hyperledger.fabric.gateway.Transaction;
@@ -44,11 +45,11 @@ public final class TransactionInvocation {
     }
 
     public void submit(String... args) {
-        invoke(() -> transaction.submit(args));
+        invoke(() -> transaction.submit(UUID.randomUUID(), args));
     }
 
     public void evaluate(String... args) {
-        invoke(() -> transaction.evaluate(args));
+        invoke(() -> transaction.evaluate(UUID.randomUUID(),args));
     }
 
     private void invoke(Callable<TransactionResponse> invocationFn) {

@@ -9,6 +9,7 @@ package org.hyperledger.fabric.gateway.impl;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -16,7 +17,6 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.hyperledger.fabric.gateway.ContractException;
 import org.hyperledger.fabric.gateway.GatewayRuntimeException;
-import org.hyperledger.fabric.gateway.Network;
 import org.hyperledger.fabric.gateway.Transaction;
 import org.hyperledger.fabric.gateway.TransactionResponse;
 import org.hyperledger.fabric.gateway.spi.CommitHandler;
@@ -90,16 +90,16 @@ public final class TransactionImpl implements Transaction {
     }
 
     @Override
-    public TransactionResponse submit(User userContext, String... args) throws ContractException, TimeoutException, InterruptedException {
-        return createSubmit(userContext, args);
+    public TransactionResponse submit(UUID correlationId, User userContext, String... args) throws ContractException, TimeoutException, InterruptedException {
+        return createSubmit(correlationId, userContext, args);
     }
 
     @Override
-    public TransactionResponse submit(String... args) throws ContractException, TimeoutException, InterruptedException {
-        return createSubmit(null, args);
+    public TransactionResponse submit(UUID correlationId, String... args) throws ContractException, TimeoutException, InterruptedException {
+        return createSubmit(correlationId,null, args);
     }
 
-    private TransactionResponse createSubmit(@Nullable User userContext, String... args) throws ContractException, TimeoutException, InterruptedException {
+    private TransactionResponse createSubmit(UUID correlationId, @Nullable User userContext, String... args) throws ContractException, TimeoutException, InterruptedException {
         try {
             TransactionProposalRequest request = newProposalRequest(userContext, args);
             Collection<ProposalResponse> proposalResponses = sendTransactionProposal(request);
@@ -127,7 +127,7 @@ public final class TransactionImpl implements Transaction {
 
             commitHandler.waitForEvents(commitTimeout.getTime(), commitTimeout.getTimeUnit());
 
-            return new TransactionResponse(transactionId, result);
+            return new TransactionResponse(correlationId, transactionId, result);
         } catch (InvalidArgumentException | ProposalException | ServiceDiscoveryException e) {
             throw new GatewayRuntimeException(e);
         }
@@ -199,23 +199,23 @@ public final class TransactionImpl implements Transaction {
     }
 
     @Override
-    public TransactionResponse evaluate(User userContext, String... args) throws ContractException {
-        return processEvaluate(userContext, args);
+    public TransactionResponse evaluate(UUID correlationId, User userContext, String... args) throws ContractException {
+        return processEvaluate(correlationId, userContext, args);
     }
 
     @Override
-    public TransactionResponse evaluate(String... args) throws ContractException {
-        return processEvaluate(null, args);
+    public TransactionResponse evaluate(UUID correlationId, String... args) throws ContractException {
+        return processEvaluate(correlationId,null, args);
     }
 
-    private TransactionResponse processEvaluate(@Nullable User userContext, String... args) throws ContractException {
+    private TransactionResponse processEvaluate(UUID correlationId, @Nullable User userContext, String... args) throws ContractException {
         QueryByChaincodeRequest request = newQueryRequest(userContext, args);
         Query query = new QueryImpl(network.getChannel(), request);
 
         ProposalResponse response = queryHandler.evaluate(query);
 
         try {
-            return new TransactionResponse(response.getTransactionID(), response.getChaincodeActionResponsePayload());
+            return new TransactionResponse(correlationId, response.getTransactionID(), response.getChaincodeActionResponsePayload());
         } catch (InvalidArgumentException e) {
             throw new ContractException(response.getMessage(), e);
         }
