@@ -8,8 +8,10 @@ package scenario;
 
 import java.util.Collection;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.Callable;
+
+import org.hyperledger.fabric.gateway.Transaction;
+import java.util.UUID;
 
 import org.hyperledger.fabric.gateway.Transaction;
 import org.hyperledger.fabric.gateway.TransactionResponse;

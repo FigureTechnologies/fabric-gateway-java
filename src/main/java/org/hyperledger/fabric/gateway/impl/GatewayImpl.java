@@ -56,6 +56,9 @@ import org.hyperledger.fabric.sdk.security.CryptoSuiteFactory;
 public final class GatewayImpl implements Gateway {
     private static final Log LOG = LogFactory.getLog(Gateway.class);
 
+    private static final long DEFAULT_COMMIT_TIMEOUT = 5;
+    private static final TimeUnit DEFAULT_COMMIT_TIMEOUT_UNIT = TimeUnit.MINUTES;
+
     private final HFClient client;
     private final NetworkConfig networkConfig;
     private final Identity identity;
@@ -67,7 +70,7 @@ public final class GatewayImpl implements Gateway {
 
     public static final class Builder implements Gateway.Builder {
         private CommitHandlerFactory commitHandlerFactory = DefaultCommitHandlers.MSPID_SCOPE_ALLFORTX;
-        private TimePeriod commitTimeout = new TimePeriod(5, TimeUnit.MINUTES);
+        private TimePeriod commitTimeout = new TimePeriod(DEFAULT_COMMIT_TIMEOUT, DEFAULT_COMMIT_TIMEOUT_UNIT);
         private QueryHandlerFactory queryHandlerFactory = DefaultQueryHandlers.MSPID_SCOPE_SINGLE;
         private NetworkConfig ccp = null;
         private Identity identity = null;
@@ -81,7 +84,7 @@ public final class GatewayImpl implements Gateway {
         }
 
         @Override
-        public Builder networkConfig(Path config) throws IOException {
+        public Builder networkConfig(final Path config) throws IOException {
             try (InputStream fileIn = new FileInputStream(config.toFile());
                  InputStream bufferedIn = new BufferedInputStream(fileIn)) {
                 return networkConfig(bufferedIn);
@@ -89,7 +92,7 @@ public final class GatewayImpl implements Gateway {
         }
 
         @Override
-        public Builder networkConfig(InputStream config) throws IOException {
+        public Builder networkConfig(final InputStream config) throws IOException {
             try (InputStream bufferedStream = copyToMemory(config)) {
                 try {
                     ccp = NetworkConfig.fromJsonStream(bufferedStream);
@@ -103,10 +106,10 @@ public final class GatewayImpl implements Gateway {
             return this;
         }
 
-        private InputStream copyToMemory(InputStream in) throws IOException {
+        private InputStream copyToMemory(final InputStream in) throws IOException {
             ExposedByteArrayOutputStream outBuff = new ExposedByteArrayOutputStream();
 
-            for (int b; (b = in.read()) > -1; ) {
+            for (int b; (b = in.read()) > -1; ) { // checkstyle:ignore-line:InnerAssignment
                 outBuff.write(b);
             }
 
@@ -114,36 +117,36 @@ public final class GatewayImpl implements Gateway {
         }
 
         @Override
-        public Builder identity(Wallet wallet, String id) throws IOException {
+        public Builder identity(final Wallet wallet, final String id) throws IOException {
             this.identity = wallet.get(id);
             return this;
         }
 
         @Override
-        public Builder commitHandler(CommitHandlerFactory commitHandlerFactory) {
+        public Builder commitHandler(final CommitHandlerFactory commitHandlerFactory) {
             this.commitHandlerFactory = commitHandlerFactory;
             return this;
         }
 
         @Override
-        public Builder queryHandler(QueryHandlerFactory queryHandler) {
+        public Builder queryHandler(final QueryHandlerFactory queryHandler) {
             this.queryHandlerFactory = queryHandler;
             return this;
         }
 
         @Override
-        public Builder commitTimeout(long timeout, TimeUnit timeUnit) {
+        public Builder commitTimeout(final long timeout, final TimeUnit timeUnit) {
             this.commitTimeout = new TimePeriod(timeout, timeUnit);
             return this;
         }
 
         @Override
-        public Builder discovery(boolean enabled) {
+        public Builder discovery(final boolean enabled) {
             this.discovery = enabled;
             return this;
         }
 
-        public Builder client(HFClient client) {
+        public Builder client(final HFClient client) {
             this.client = client;
             return this;
         }
@@ -154,7 +157,7 @@ public final class GatewayImpl implements Gateway {
         }
     }
 
-    private GatewayImpl(Builder builder) {
+    private GatewayImpl(final Builder builder) {
         this.commitHandlerFactory = builder.commitHandlerFactory;
         this.commitTimeout = builder.commitTimeout;
         this.queryHandlerFactory = builder.queryHandlerFactory;
@@ -182,7 +185,7 @@ public final class GatewayImpl implements Gateway {
         }
     }
 
-    private GatewayImpl(GatewayImpl that) {
+    private GatewayImpl(final GatewayImpl that) {
         this.commitHandlerFactory = that.commitHandlerFactory;
         this.commitTimeout = that.commitTimeout;
         this.queryHandlerFactory = that.queryHandlerFactory;
@@ -233,8 +236,8 @@ public final class GatewayImpl implements Gateway {
             CryptoSuite cryptoSuite = CryptoSuiteFactory.getDefault().getCryptoSuite();
             client.setCryptoSuite(cryptoSuite);
             client.setUserContext(user);
-        } catch (ClassNotFoundException | CryptoException | IllegalAccessException | NoSuchMethodException |
-                InstantiationException | InvalidArgumentException | InvocationTargetException e) {
+        } catch (ClassNotFoundException | CryptoException | IllegalAccessException | NoSuchMethodException
+                | InstantiationException | InvalidArgumentException | InvocationTargetException e) {
             throw new GatewayRuntimeException("Failed to configure client", e);
         }
 
