@@ -38,9 +38,12 @@ import org.mockito.MockitoAnnotations;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyCollection;
 import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -48,6 +51,7 @@ import static org.mockito.Mockito.when;
 public class TransactionTest {
     private final TestUtils testUtils = TestUtils.getInstance();
     private final TimePeriod timeout = new TimePeriod(7, TimeUnit.DAYS);
+    private Gateway.Builder gatewayBuilder;
     private Gateway gateway;
     private Channel channel;
     private Contract contract;
@@ -61,6 +65,8 @@ public class TransactionTest {
     private ArgumentCaptor<Collection<ProposalResponse>> proposalResponseCaptor;
     @Captor
     private ArgumentCaptor<Collection<Peer>> peerCaptor;
+    @Captor
+    private ArgumentCaptor<Channel.DiscoveryOptions> discoveryOptionsCaptor;
 
     @BeforeEach
     public void setup() throws Exception {
@@ -80,11 +86,11 @@ public class TransactionTest {
         when(client.newQueryProposalRequest()).thenReturn(HFClient.createNewInstance().newQueryProposalRequest());
 
         commitHandler = mock(CommitHandler.class);
-        gateway = TestUtils.getInstance().newGatewayBuilder()
+        gatewayBuilder = TestUtils.getInstance().newGatewayBuilder()
                 .client(client)
                 .commitHandler((transactionId, network) -> commitHandler)
-                .commitTimeout(timeout.getTime(), timeout.getTimeUnit())
-                .connect();
+                .commitTimeout(timeout.getTime(), timeout.getTimeUnit());
+        gateway = gatewayBuilder.connect();
         contract = gateway.getNetwork("network").getContract("contract");
 
         failureResponse = testUtils.newFailureProposalResponse("Epic fail");
@@ -147,20 +153,27 @@ public class TransactionTest {
     }
 
     @Test
-    public void testSubmitNoResponses() throws Exception {
-        List<ProposalResponse> responses = new ArrayList<>();
-        when(channel.sendTransactionProposal(any())).thenReturn(responses);
+    public void submit_with_no_responses_throws_ContractException_with_no_responses() throws Exception {
+        when(channel.sendTransactionProposal(any())).thenReturn(Collections.emptyList());
 
-        assertThatThrownBy(() -> contract.submitTransaction(UUID.randomUUID(),"txn", "arg1"))
-                .isInstanceOf(GatewayException.class);
+        ContractException e = catchThrowableOfType(
+                () -> contract.submitTransaction(UUID.randomUUID(), "txn", "arg1"),
+                ContractException.class);
+
+        assertThat(e.getProposalResponses()).isEmpty();
     }
 
     @Test
-    public void testSubmitUnsuccessfulResponse() throws Exception {
+    public void submit_with_bad_responses_throws_ContractException_with_responses() throws Exception {
         when(channel.sendTransactionProposal(any())).thenReturn(Collections.singletonList(failureResponse));
 
-        assertThatThrownBy(() -> contract.submitTransaction(UUID.randomUUID(),"txn", "arg1"))
-                .isInstanceOf(GatewayException.class);
+        ContractException e = catchThrowableOfType(
+                () -> contract.submitTransaction(UUID.randomUUID(), "txn", "arg1"),
+                ContractException.class);
+
+        System.out.println(e.getMessage());
+        assertThat(e).hasMessageContaining(failureResponse.getMessage());
+        assertThat(e.getProposalResponses()).containsExactly(failureResponse);
     }
 
     @Test
@@ -221,5 +234,38 @@ public class TransactionTest {
 
         verify(channel).sendTransactionProposal(any(TransactionProposalRequest.class), peerCaptor.capture());
         assertThat(peerCaptor.getValue()).containsExactly(peer2);
+    }
+
+    @Test
+    public void submit_using_discovery_sets_inspect_results_option() throws Exception {
+        String expected = "successful result";
+        ProposalResponse goodResponse = testUtils.newSuccessfulProposalResponse(expected.getBytes());
+        when(channel.sendTransactionProposalToEndorsers(any(TransactionProposalRequest.class), any(Channel.DiscoveryOptions.class)))
+                .thenReturn(Collections.singletonList(goodResponse));
+        gateway = gatewayBuilder
+                .discovery(true)
+                .connect();
+        contract = gateway.getNetwork("network").getContract("contract");
+
+        TransactionResponse result = contract.submitTransaction(UUID.randomUUID(), "txn");
+
+        assertThat(new String(result.getPayload())).isEqualTo(expected);
+        verify(channel).sendTransactionProposalToEndorsers(any(TransactionProposalRequest.class), discoveryOptionsCaptor.capture());
+        assertThat(discoveryOptionsCaptor.getValue().isInspectResults()).isTrue();
+    }
+
+    @Test
+    public void commit_failure_throws_ContractException_with_proposal_responses() throws Exception {
+        String expected = "successful result";
+        ProposalResponse response = testUtils.newSuccessfulProposalResponse(expected.getBytes());
+        when(channel.sendTransactionProposal(any())).thenReturn(Collections.singletonList(response));
+        ContractException commitException = new ContractException("Commit failed");
+        doThrow(commitException).when(commitHandler).waitForEvents(anyLong(), any(TimeUnit.class));
+
+        ContractException e = catchThrowableOfType(
+                () -> contract.submitTransaction(UUID.randomUUID(), "txn", "arg1"),
+                ContractException.class);
+
+        assertThat(e.getProposalResponses()).containsExactly(response);
     }
 }

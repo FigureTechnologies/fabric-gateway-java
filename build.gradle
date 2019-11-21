@@ -49,8 +49,9 @@ allprojects {
         compile "org.hyperledger.fabric-sdk-java:fabric-sdk-java:$fabric_sdk_java_version"
 
         testCompile group: 'org.junit.platform', name: 'junit-platform-launcher', version: '1.5.1'
-        testCompile group: 'org.junit.jupiter', name: 'junit-jupiter-engine', version: '5.5.1'
-        testCompile group: 'org.junit.vintage', name: 'junit-vintage-engine', version: '5.5.1'
+        testCompile group: 'org.junit.jupiter', name: 'junit-jupiter-engine', version: '5.5.2'
+        testCompile group: 'org.junit.jupiter', name: 'junit-jupiter-params', version: '5.5.2'
+        testCompile group: 'org.junit.vintage', name: 'junit-vintage-engine', version: '5.5.2'
         testCompile group: 'org.assertj', name: 'assertj-core', version: '3.12.2'
         testCompile group: 'org.mockito', name: 'mockito-core', version: '2.28.2'
         testCompile group: 'io.cucumber', name: 'cucumber-java8', version: '4.7.0'
