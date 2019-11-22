@@ -99,7 +99,7 @@ public final class TransactionImpl implements Transaction {
 
     @Override
     public TransactionResponse submit(final UUID correlationId, final String... args) throws ContractException, TimeoutException, InterruptedException {
-        return createSubmit(correlationId,null, args);
+        return createSubmit(correlationId, null, args);
     }
 
     private TransactionResponse createSubmit(final UUID correlationId, @Nullable final User userContext, final String... args) throws ContractException, TimeoutException, InterruptedException {
@@ -107,13 +107,31 @@ public final class TransactionImpl implements Transaction {
             TransactionProposalRequest request = newProposalRequest(userContext, args);
             Collection<ProposalResponse> proposalResponses = sendTransactionProposal(request);
 
-            byte[] result =  commitTransaction(proposalResponses);
+            byte[] result = commitTransaction(proposalResponses);
 
             return new TransactionResponse(correlationId, proposalResponses.iterator().next().getTransactionID(), result);
         } catch (InvalidArgumentException | ProposalException | ServiceDiscoveryException e) {
             throw new GatewayRuntimeException(e);
         }
     }
+
+    private Collection<ProposalResponse> retryProposal(final TransactionProposalRequest request, final Channel.DiscoveryOptions discoveryOptions)
+            throws ProposalException, InvalidArgumentException, ServiceDiscoveryException {
+        int retryCount = channel.getPeers().size();
+        while (true) {
+            try {
+                return channel.sendTransactionProposalToEndorsers(request, discoveryOptions);
+            } catch (InvalidArgumentException | ServiceDiscoveryException | ProposalException e) {
+                LOG.info("Retrying " + channel.getName() + "." + request.getChaincodeName() + "." + request.getFcn()+
+                        ": "+e.getMessage());
+                if (retryCount <= 0) {
+                    throw e;
+                }
+            }
+            retryCount--;
+        }
+    }
+
     private Collection<ProposalResponse> sendTransactionProposal(final TransactionProposalRequest request)
             throws ProposalException, InvalidArgumentException, ServiceDiscoveryException {
         if (endorsingPeers != null) {
@@ -123,7 +141,7 @@ public final class TransactionImpl implements Transaction {
                     .setEndorsementSelector(ServiceDiscovery.EndorsementSelector.ENDORSEMENT_SELECTION_RANDOM)
                     .setInspectResults(true)
                     .setForceDiscovery(true);
-            return channel.sendTransactionProposalToEndorsers(request, discoveryOptions);
+            return retryProposal(request, discoveryOptions);
         } else {
             return channel.sendTransactionProposal(request);
         }
@@ -220,7 +238,7 @@ public final class TransactionImpl implements Transaction {
 
     @Override
     public TransactionResponse evaluate(final UUID correlationId, final String... args) throws ContractException {
-        return processEvaluate(correlationId,null, args);
+        return processEvaluate(correlationId, null, args);
     }
 
     private TransactionResponse processEvaluate(final UUID correlationId, @Nullable final User userContext, final String... args) throws ContractException {
