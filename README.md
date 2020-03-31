@@ -2,15 +2,13 @@
 
 The Fabric Gateway SDK allows applications to interact with a Fabric blockchain network.  It provides a simple API to submit transactions to a ledger or query the contents of a ledger with minimal code.
 
-The Gateway SDK implements the Fabric programming model as described in the [Developing Applications](https://hyperledger-fabric.readthedocs.io/en/release-1.4/developapps/developing_applications.html) chapter of the Fabric documentation.
+The Gateway SDK implements the Fabric programming model as described in the [Developing Applications](https://hyperledger-fabric.readthedocs.io/en/latest/developapps/developing_applications.html) chapter of the Fabric documentation.
 
 ## How to use 
 
 The following shows a complete code sample of how to connect to a fabric network, submit a transaction and query the ledger state using an instantiated smart contract (fabcar sample).
 
 ```java
-package org.example;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -22,13 +20,13 @@ import org.hyperledger.fabric.gateway.ContractException;
 import org.hyperledger.fabric.gateway.Gateway;
 import org.hyperledger.fabric.gateway.Network;
 import org.hyperledger.fabric.gateway.Wallet;
+import org.hyperledger.fabric.gateway.Wallets;
 
-public final class Sample {
+class Sample {
     public static void main(String[] args) throws IOException {
-
         // Load an existing wallet holding identities used to access the network.
         Path walletDirectory = Paths.get("wallet");
-        Wallet wallet = Wallet.createFileSystemWallet(walletDirectory);
+        Wallet wallet = Wallets.newFileSystemWallet(walletDirectory);
 
         // Path to a common connection profile describing the network.
         Path networkConfigFile = Paths.get("connection.json");
@@ -46,14 +44,15 @@ public final class Sample {
             Contract contract = network.getContract("fabcar");
 
             // Submit transactions that store state to the ledger.
-            byte[] createCarResult = contract.submitTransaction("createCar", "CAR10", "VW", "Polo", "Grey", "Mary");
+            byte[] createCarResult = contract.createTransaction("createCar")
+                    .submit("CAR10", "VW", "Polo", "Grey", "Mary");
             System.out.println(new String(createCarResult, StandardCharsets.UTF_8));
 
             // Evaluate transactions that query state from the ledger.
             byte[] queryAllCarsResult = contract.evaluateTransaction("queryAllCars");
             System.out.println(new String(queryAllCarsResult, StandardCharsets.UTF_8));
 
-        } catch (ContractException | TimeoutException e) {
+        } catch (ContractException | TimeoutException | InterruptedException e) {
             e.printStackTrace();
         }
     }
@@ -62,7 +61,9 @@ public final class Sample {
 
 ### API documentation
 
-Full Javadoc documentation of the SDK is published at [fabric-gateway-java.github.io](https://fabric-gateway-java.github.io/).
+Full Javadoc documentation is published for each of the following versions:
+- [2.0](https://hyperledger.github.io/fabric-gateway-java/master/)
+- [1.4](https://hyperledger.github.io/fabric-gateway-java/release-1.4/)
 
 ### Maven
 
@@ -72,7 +73,7 @@ Add the following dependency to your project's `pom.xml` file:
 <dependency>
   <groupId>org.hyperledger.fabric</groupId>
   <artifactId>fabric-gateway-java</artifactId>
-  <version>1.4.0</version>
+  <version>2.0.0</version>
 </dependency>
 ```
 
@@ -81,8 +82,27 @@ Add the following dependency to your project's `pom.xml` file:
 Add the following dependency to your project's `build.gradle` file:
 
 ```groovy
-implementation 'org.hyperledger.fabric:fabric-gateway-java:1.4.0'
+implementation 'org.hyperledger.fabric:fabric-gateway-java:2.0.0'
 ```
+
+### Compatibility
+
+The following table shows versions of Fabric, Java and other dependencies that are explicitly tested and that are supported for use with version 2.0 of the Fabric Gateway SDK. Refer to the appropriate GitHub branch for compatibility of other release versions.
+
+|     | Tested | Supported |
+| --- | ------ | --------- |
+| **Fabric** | 2.0 | 2.0.x |
+| **Java** | 8, 11 | 8+ |
+| **Platform** | Ubuntu 18.04 | |
+
+#### Client applications running on POWER architecture
+To run Java SDK clients on IBM POWER systems (e.g. zLinux), use Java 11 and set the SSL provider to ‘JDK’ by either supplying the -D command line option:
+
+```-Dorg.hyperledger.fabric.sdk.connections.ssl.sslProvider=JDK```
+
+or with the environment variable set as follows:
+
+```ORG_HYPERLEDGER_FABRIC_SDK_CONNECTIONS_SSL_SSLPROVIDER=JDK```
 
 ## Building and testing
 

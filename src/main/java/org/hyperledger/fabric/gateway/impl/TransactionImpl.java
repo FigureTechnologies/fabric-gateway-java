@@ -18,12 +18,12 @@ import org.apache.commons.logging.LogFactory;
 import org.hyperledger.fabric.gateway.ContractException;
 import org.hyperledger.fabric.gateway.GatewayRuntimeException;
 import org.hyperledger.fabric.gateway.Transaction;
+import org.hyperledger.fabric.gateway.impl.query.QueryImpl;
 import org.hyperledger.fabric.gateway.TransactionResponse;
 import org.hyperledger.fabric.gateway.spi.CommitHandler;
 import org.hyperledger.fabric.gateway.spi.CommitHandlerFactory;
 import org.hyperledger.fabric.gateway.spi.Query;
 import org.hyperledger.fabric.gateway.spi.QueryHandler;
-import org.hyperledger.fabric.sdk.ChaincodeID;
 import org.hyperledger.fabric.sdk.ChaincodeResponse;
 import org.hyperledger.fabric.sdk.Channel;
 import org.hyperledger.fabric.sdk.Peer;
@@ -103,32 +103,24 @@ public final class TransactionImpl implements Transaction {
     }
 
     private TransactionResponse createSubmit(final UUID correlationId, @Nullable final User userContext, final String... args) throws ContractException, TimeoutException, InterruptedException {
+            Collection<ProposalResponse> proposalResponses = endorseTransaction(userContext, args);
+            Collection<ProposalResponse> validResponses = validatePeerResponses(proposalResponses);
+
         try {
-            TransactionProposalRequest request = newProposalRequest(userContext, args);
-            Collection<ProposalResponse> proposalResponses = sendTransactionProposal(request);
-
-            byte[] result = commitTransaction(proposalResponses);
-
+            byte[] result = commitTransaction(validResponses);
             return new TransactionResponse(correlationId, proposalResponses.iterator().next().getTransactionID(), result);
-        } catch (InvalidArgumentException | ProposalException | ServiceDiscoveryException e) {
-            throw new GatewayRuntimeException(e);
+        } catch (ContractException e) {
+            e.setProposalResponses(proposalResponses);
+            throw e;
         }
     }
 
-    private Collection<ProposalResponse> retryProposal(final TransactionProposalRequest request, final Channel.DiscoveryOptions discoveryOptions)
-            throws ProposalException, InvalidArgumentException, ServiceDiscoveryException {
-        int retryCount = channel.getPeers().size();
-        while (true) {
-            try {
-                return channel.sendTransactionProposalToEndorsers(request, discoveryOptions);
-            } catch (InvalidArgumentException | ServiceDiscoveryException | ProposalException e) {
-                LOG.info("Retrying " + channel.getName() + "." + request.getChaincodeName() + "." + request.getFcn()+
-                        ": "+e.getMessage());
-                if (retryCount <= 0) {
-                    throw e;
-                }
-            }
-            retryCount--;
+    private Collection<ProposalResponse> endorseTransaction(final User userContext, final String... args) {
+        try {
+            TransactionProposalRequest request = newProposalRequest(userContext, args);
+            return sendTransactionProposal(request);
+        } catch (InvalidArgumentException | ProposalException | ServiceDiscoveryException e) {
+            throw new GatewayRuntimeException(e);
         }
     }
 
@@ -141,12 +133,11 @@ public final class TransactionImpl implements Transaction {
                     .setEndorsementSelector(ServiceDiscovery.EndorsementSelector.ENDORSEMENT_SELECTION_RANDOM)
                     .setInspectResults(true)
                     .setForceDiscovery(true);
-            return retryProposal(request, discoveryOptions);
+            return channel.sendTransactionProposalToEndorsers(request, discoveryOptions);
         } else {
             return channel.sendTransactionProposal(request);
         }
     }
-
 
     private byte[] commitTransaction(final Collection<ProposalResponse> validResponses)
             throws TimeoutException, ContractException, InterruptedException {
@@ -193,7 +184,7 @@ public final class TransactionImpl implements Transaction {
     }
 
     private void configureRequest(@Nullable final User userContext, final TransactionRequest request, final String... args) {
-        request.setChaincodeID(getChaincodeId());
+        request.setChaincodeName(contract.getChaincodeId());
         request.setFcn(name);
         request.setArgs(args);
         if (userContext != null) {
@@ -201,13 +192,8 @@ public final class TransactionImpl implements Transaction {
         }
     }
 
-    private ChaincodeID getChaincodeId() {
-        return ChaincodeID.newBuilder()
-                .setName(contract.getChaincodeId())
-                .build();
-    }
-
-    private Collection<ProposalResponse> validatePeerResponses(final Collection<ProposalResponse> proposalResponses) throws ContractException {
+    private Collection<ProposalResponse> validatePeerResponses(final Collection<ProposalResponse> proposalResponses)
+            throws ContractException {
         final Collection<ProposalResponse> validResponses = new ArrayList<>();
         final Collection<String> invalidResponseMsgs = new ArrayList<>();
         proposalResponses.forEach(response -> {

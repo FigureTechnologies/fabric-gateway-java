@@ -13,7 +13,6 @@ import java.util.concurrent.Callable;
 import org.hyperledger.fabric.gateway.Transaction;
 import java.util.UUID;
 
-import org.hyperledger.fabric.gateway.Transaction;
 import org.hyperledger.fabric.gateway.TransactionResponse;
 import org.hyperledger.fabric.sdk.Peer;
 

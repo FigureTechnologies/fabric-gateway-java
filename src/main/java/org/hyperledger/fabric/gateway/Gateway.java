@@ -23,7 +23,8 @@ import org.hyperledger.fabric.gateway.spi.QueryHandlerFactory;
  * using the {@link #getNetwork(String) getNetwork} method which in turn can access the {@link Contract} installed on a
  * network and {@link Contract#submitTransaction(String, String...) submit transactions} to the ledger.
  *
- * <p>Gateway instances should be closed only once connection to the Fabric network is no longer required.</p>
+ * <p>Gateway instances should be reused for multiple transaction invocations and only closed once connection to the
+ * Fabric network is no longer required.</p>
  *
  * <pre><code>
  *     Gateway.Builder builder = Gateway.createBuilder()
@@ -35,6 +36,27 @@ import org.hyperledger.fabric.gateway.spi.QueryHandlerFactory;
  *         // Interactions with the network
  *     }
  * </code></pre>
+ *
+ * <h2>Service discovery</h2>
+ *
+ * <p>Service discovery allows the client to dynamically discover nodes (peers and orderers) within a network that are
+ * not defined in the connection profile, and is enabled using {@link Gateway.Builder#discovery(boolean)}. With
+ * service discovery enabled, the client will receive the public network address of each node. If these network
+ * addresses can be reached directly by the client, no additional configuration is required.</p>
+ *
+ * <p>In some cases nodes cannot be accessed directly by the client on their public network address. For example, when
+ * nodes are hosted in Docker containers, and the client is running on the local machine outside of the Docker
+ * network. In this case service discovery will report the network address of nodes within the Docker network but the
+ * client will need to access nodes using the <em>localhost</em> address. Setting the following environment variable
+ * will force service discovery to report the <em>localhost</em> address for all nodes.
+ *
+ * <pre>org.hyperledger.fabric.sdk.service_discovery.as_localhost=true</pre>
+ *
+ * <p>An alternative approach is to modify the local <strong>hosts</strong> file for the client machine to resolve the
+ * network address of nodes running in a Docker network to the <em>localhost</em> address.</p>
+ *
+ * <p>Note that the port numbers of nodes obtained through service discovery remain unchanged so ports forwarded from
+ * the local machine's network must match the port numbers of nodes within the Docker network.</p>
  *
  * @see <a href="https://hyperledger-fabric.readthedocs.io/en/release-1.4/developapps/application.html#gateway">Developing Fabric Applications - Gateway</a>
  */
@@ -51,9 +73,9 @@ public interface Gateway extends AutoCloseable {
     /**
      * Get the identity associated with the gateway connection.
      *
-     * @return {@link Wallet.Identity}} The identity used by this Gateway.
+     * @return The identity used by this Gateway.
      */
-    Wallet.Identity getIdentity();
+    Identity getIdentity();
 
     /**
      * Creates a gateway builder which is used to configure the gateway options
@@ -103,12 +125,20 @@ public interface Gateway extends AutoCloseable {
         /**
          * Specifies the identity that is to be used to connect to the network.  All operations
          * under this gateway connection will be performed using this identity.
-         * @param wallet The {@link Wallet} object containing the identity.
+         * @param wallet The wallet object containing the identity.
          * @param id The name of the identity stored in the wallet.
          * @return The builder instance, allowing multiple configuration options to be chained.
          * @throws IOException if the specified identity can not be loaded from the wallet.
          */
         Builder identity(Wallet wallet, String id) throws IOException;
+
+        /**
+         * Specifies the identity that is to be used to connect to the network.  All operations
+         * under this gateway connection will be performed using this identity.
+         * @param identity An identity
+         * @return The builder instance, allowing multiple configuration options to be chained.
+         */
+        Builder identity(Identity identity);
 
         /**
          * <em>Optional</em> - Allows an alternative commit handler to be specified. The commit handler defines how
@@ -139,6 +169,7 @@ public interface Gateway extends AutoCloseable {
 
         /**
          * <em>Optional</em> - Enable or disable service discovery for all transaction submissions for this gateway.
+         * Service discovery is disabled by default.
          * @param enabled - true to enable service discovery
          * @return The builder instance, allowing multiple configuration options to be chained.
          */

@@ -13,6 +13,8 @@ import java.util.function.Function;
 
 import org.hyperledger.fabric.gateway.ContractException;
 import org.hyperledger.fabric.gateway.TestUtils;
+import org.hyperledger.fabric.gateway.impl.query.RoundRobinQueryHandler;
+import org.hyperledger.fabric.gateway.impl.query.SingleQueryHandler;
 import org.hyperledger.fabric.gateway.spi.Query;
 import org.hyperledger.fabric.gateway.spi.QueryHandler;
 import org.hyperledger.fabric.sdk.Peer;

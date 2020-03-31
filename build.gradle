@@ -34,7 +34,7 @@ allprojects {
         jcenter()
         maven { url "https://digitalassetsdk.bintray.com/DigitalAssetSDK" }
         maven { url "https://oss.sonatype.org/content/repositories/snapshots" }
-        maven { url "http://repo.maven.apache.org/maven2" }
+        maven { url "https://repo.maven.apache.org/maven2" }
 
         maven {
             url "https://nexus.figure.com/repository/figure"
@@ -47,15 +47,16 @@ allprojects {
 
     dependencies {
         compile "org.hyperledger.fabric-sdk-java:fabric-sdk-java:$fabric_sdk_java_version"
+        compile "com.cloudant:cloudant-client:2.18.0"
 
-        testCompile group: 'org.junit.platform', name: 'junit-platform-launcher', version: '1.5.1'
-        testCompile group: 'org.junit.jupiter', name: 'junit-jupiter-engine', version: '5.5.2'
-        testCompile group: 'org.junit.jupiter', name: 'junit-jupiter-params', version: '5.5.2'
-        testCompile group: 'org.junit.vintage', name: 'junit-vintage-engine', version: '5.5.2'
-        testCompile group: 'org.assertj', name: 'assertj-core', version: '3.12.2'
-        testCompile group: 'org.mockito', name: 'mockito-core', version: '2.28.2'
-        testCompile group: 'io.cucumber', name: 'cucumber-java8', version: '4.7.0'
-        testCompile group: 'io.cucumber', name: 'cucumber-junit', version: '4.7.0'
+        testCompile group: 'org.junit.platform', name: 'junit-platform-launcher', version: '1.6.0'
+        testCompile group: 'org.junit.jupiter', name: 'junit-jupiter-engine', version: '5.6.0'
+        testCompile group: 'org.junit.jupiter', name: 'junit-jupiter-params', version: '5.6.0'
+        testCompile group: 'org.junit.vintage', name: 'junit-vintage-engine', version: '5.6.0'
+        testCompile group: 'org.assertj', name: 'assertj-core', version: '3.15.0'
+        testCompile group: 'org.mockito', name: 'mockito-core', version: '3.3.0'
+        testCompile group: 'io.cucumber', name: 'cucumber-java8', version: '5.4.0'
+        testCompile group: 'io.cucumber', name: 'cucumber-junit', version: '5.4.0'
     }
 
     def artifactName = it.name

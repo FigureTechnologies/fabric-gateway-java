@@ -13,11 +13,16 @@ import java.util.Optional;
 
 import org.hyperledger.fabric.sdk.ProposalResponse;
 
+import org.hyperledger.fabric.sdk.ProposalResponse;
+
 /**
  * Thrown when an error occurs invoking a smart contract.
  */
 public class ContractException extends GatewayException {
+    private static final long serialVersionUID = -1278679656087547825L;
+
     private final byte[] payload;
+
     private Collection<ProposalResponse> proposalResponses;
 
     /**
@@ -53,6 +58,7 @@ public class ContractException extends GatewayException {
     public ContractException(final String message, final byte[] payload) {
         super(message);
         this.payload = payload;
+        this.proposalResponses = Collections.emptyList();
     }
 
     /**

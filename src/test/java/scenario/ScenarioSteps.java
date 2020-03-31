@@ -5,12 +5,18 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.Reader;
 import java.io.StringReader;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.InvalidKeyException;
+import java.security.PrivateKey;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -25,6 +31,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import javax.json.Json;
@@ -34,6 +41,7 @@ import javax.json.JsonReader;
 import javax.json.JsonString;
 
 import io.cucumber.datatable.DataTable;
+import io.cucumber.docstring.DocString;
 import io.cucumber.java8.En;
 import org.hyperledger.fabric.gateway.Contract;
 import org.hyperledger.fabric.gateway.ContractEvent;
@@ -42,11 +50,13 @@ import org.hyperledger.fabric.gateway.DefaultCheckpointers;
 import org.hyperledger.fabric.gateway.DefaultCommitHandlers;
 import org.hyperledger.fabric.gateway.DefaultQueryHandlers;
 import org.hyperledger.fabric.gateway.Gateway;
-import org.hyperledger.fabric.gateway.GatewayException;
+import org.hyperledger.fabric.gateway.Identities;
+import org.hyperledger.fabric.gateway.Identity;
 import org.hyperledger.fabric.gateway.Network;
 import org.hyperledger.fabric.gateway.TestUtils;
 import org.hyperledger.fabric.gateway.Transaction;
 import org.hyperledger.fabric.gateway.Wallet;
+import org.hyperledger.fabric.gateway.Wallets;
 import org.hyperledger.fabric.gateway.sample.SampleCommitHandlerFactory;
 import org.hyperledger.fabric.gateway.spi.Checkpointer;
 import org.hyperledger.fabric.sdk.BlockEvent;
@@ -60,19 +70,25 @@ public class ScenarioSteps implements En {
     private static final long EVENT_TIMEOUT_SECONDS = 30;
     private static final Set<String> runningChaincodes = new HashSet<>();
     private static boolean channelsJoined = false;
+    private static final String COUCHDB_SERVER_URL = "http://localhost:5984";
+    private static final String DOCKER_COMPOSE_TLS_FILE = "docker-compose-tls.yaml";
+    private static final String DOCKER_COMPOSE_FILE = "docker-compose.yaml";
+    private static final Path DOCKER_COMPOSE_DIR = Paths.get("src", "test", "fixtures", "docker-compose").toAbsolutePath();
 
-    private String fabricNetworkType = null;
-    private Gateway.Builder gatewayBuilder = null;
-    private Gateway gateway = null;
-    private Network network = null;
-    private Contract contract = null;
+
+    private String fabricNetworkType;
+    private Gateway.Builder gatewayBuilder;
+    private Gateway gateway;
+    private Network network;
+    private Contract contract;
     private TransactionInvocation transactionInvocation;
-    private Consumer<BlockEvent> blockListener = null;
+    private Consumer<BlockEvent> blockListener;
     private final BlockingQueue<BlockEvent> blockEvents = new LinkedBlockingQueue<>();
-    private Consumer<ContractEvent> contractListener = null;
+    private Consumer<ContractEvent> contractListener;
     private final BlockingQueue<ContractEvent> contractEvents = new LinkedBlockingQueue<>();
     private final Path checkpointFile;
-    private Checkpointer checkpointer = null;
+    private Checkpointer checkpointer;
+    private Wallet wallet = Wallets.newInMemoryWallet();
 
     static {
         System.setProperty(Config.SERVICE_DISCOVER_AS_LOCALHOST, "true");
@@ -85,6 +101,8 @@ public class ScenarioSteps implements En {
             if (gateway != null) {
                 gateway.close();
             }
+
+            emptyWallet();
         });
 
         Given("I have deployed a {word} Fabric network", (String tlsType) -> {
@@ -152,16 +170,23 @@ public class ScenarioSteps implements En {
             }
         });
 
+        Given("I use a CouchDB wallet", () -> {
+            URL serverUrl = new URL(COUCHDB_SERVER_URL);
+            wallet = Wallets.newCouchDBWallet(serverUrl, "wallet");
+        });
+
         Given("I have a gateway as user {word} using the {word} connection profile",
                 (String userName, String tlsType) -> {
-                    Wallet wallet = createWallet();
-                    gatewayBuilder = Gateway.createBuilder();
+                    prepareGateway(tlsType);
+                    populateWallet();
                     gatewayBuilder.identity(wallet, userName);
-                    gatewayBuilder.networkConfig(getNetworkConfigPath(tlsType));
-                    gatewayBuilder.commitTimeout(1, TimeUnit.MINUTES);
-                    if (tlsType.equals("discovery")) {
-                        gatewayBuilder.discovery(true);
-                    }
+                });
+
+        Given("I have a gateway with identity User1 using the {word} connection profile",
+                (String tlsType) -> {
+                    prepareGateway(tlsType);
+                    Identity identity = newOrg1UserIdentity();
+                    gatewayBuilder.identity(identity);
                 });
 
         Given("I configure the gateway to use the default {word} commit handler",
@@ -201,43 +226,75 @@ public class ScenarioSteps implements En {
                     String ccPath = Paths.get(FileSystems.getDefault().getSeparator(),
                             "opt", "gopath", "src", "github.com", "chaincode", ccType, ccName).toString();
 
-                    exec("docker", "exec", "org1_cli", "peer", "chaincode", "install",
-                            "-l", ccType,
-                            "-n", ccName,
-                            "-v", version,
-                            "-p", ccPath
-                    );
+                    String ccLabel = ccName + "v" + version;
+                    String ccPackage = ccName + ".tar.gz";
 
-                    exec("docker", "exec", "org2_cli", "peer", "chaincode", "install",
-                            "-l", ccType,
-                            "-n", ccName,
-                            "-v", version,
-                            "-p", ccPath
-                    );
+                    // Org1
+                    exec("docker", "exec", "org1_cli", "peer", "lifecycle", "chaincode", "package", ccPackage, "--lang",
+                            ccType, "--label", ccLabel, "--path", ccPath);
 
-                    Thread.sleep(3000);
+                    exec("docker", "exec", "org1_cli", "peer", "lifecycle", "chaincode", "install", ccPackage);
 
-                    List<String> instantiateCommand = new ArrayList<>();
-                    Collections.addAll(instantiateCommand,
-                            "docker", "exec", "org1_cli", "peer", "chaincode", "instantiate",
-                            "-o", "orderer.example.com:7050",
-                            "-l", ccType,
-                            "-C", channelName,
-                            "-n", ccName,
-                            "-v", version,
-                            "-c", initArg,
-                            "-P", "AND(\"Org1MSP.member\",\"Org2MSP.member\")"
+                    String installed = exec("docker", "exec", "org1_cli", "peer", "lifecycle", "chaincode",
+                            "queryinstalled");
+                    Pattern regex = Pattern.compile(".*Package ID: (.*), Label: " + ccLabel + ".*");
+                    Matcher matcher = regex.matcher(installed);
+                    if (!matcher.matches()) {
+                        System.out.println(installed);
+                        throw new IllegalStateException("Cannot find installed chaincode for Org1: " + ccLabel);
+                    }
+                    String packageId = matcher.group(1);
+
+                    List<String> approveCommand = new ArrayList<>();
+                    Collections.addAll(approveCommand, "docker", "exec", "org1_cli", "peer", "lifecycle", "chaincode",
+                            "approveformyorg", "--package-id", packageId, "--channelID", channelName, "--name", ccName,
+                            "--version", version, "--signature-policy", "AND(\"Org1MSP.member\",\"Org2MSP.member\")",
+                            "--sequence", "1", "--waitForEvent"
                     );
-                    instantiateCommand.addAll(tlsOptions);
-                    exec(instantiateCommand);
+                    approveCommand.addAll(tlsOptions);
+                    exec(approveCommand);
+
+                    // Org2
+                    exec("docker", "exec", "org2_cli", "peer", "lifecycle", "chaincode", "package", ccPackage, "--lang",
+                            ccType, "--label", ccLabel,
+                            "--path", ccPath);
+
+                    exec("docker", "exec", "org2_cli", "peer", "lifecycle", "chaincode", "install", ccPackage);
+
+                    installed = exec("docker", "exec", "org2_cli", "peer", "lifecycle", "chaincode",
+                            "queryinstalled");
+                    matcher = regex.matcher(installed);
+                    if (!matcher.matches()) {
+                        System.err.println(installed);
+                        throw new IllegalStateException("Cannot find installed chaincode for Org2: " + ccLabel);
+                    }
+                    packageId = matcher.group(1);
+
+                    approveCommand = new ArrayList<>();
+                    Collections.addAll(approveCommand, "docker", "exec", "org2_cli", "peer", "lifecycle", "chaincode",
+                            "approveformyorg", "--package-id", packageId, "--channelID", channelName, "--name", ccName,
+                            "--version", version, "--signature-policy", "AND(\"Org1MSP.member\",\"Org2MSP.member\")",
+                            "--sequence", "1", "--waitForEvent");
+                    approveCommand.addAll(tlsOptions);
+                    exec(approveCommand);
+
+                    // commit
+                    List<String> commitCommand = new ArrayList<>();
+                    Collections.addAll(commitCommand, "docker", "exec", "org1_cli", "peer", "lifecycle", "chaincode",
+                            "commit", "--channelID", channelName, "--name", ccName, "--version", version,
+                            "--signature-policy", "AND(\"Org1MSP.member\",\"Org2MSP.member\")", "--sequence", "1",
+                            "--waitForEvent", "--peerAddresses", "peer0.org1.example.com:7051", "--peerAddresses",
+                            "peer0.org2.example.com:8051",
+                            "--tlsRootCertFiles",
+                            "/etc/hyperledger/configtx/crypto-config/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/tls/ca.crt",
+                            "--tlsRootCertFiles",
+                            "/etc/hyperledger/configtx/crypto-config/peerOrganizations/org2.example.com/peers/peer0.org2.example.com/tls/ca.crt");
+                    commitCommand.addAll(tlsOptions);
+                    exec(commitCommand);
+
 
                     runningChaincodes.add(mangledName);
                     Thread.sleep(60000);
-                });
-
-        Given("I update channel with name {word} with config file {string} from the {word} connection profile",
-                (String channelName, String txFileName, String tlsType) -> {
-                    throw new cucumber.api.PendingException();
                 });
 
         Given("I use the {word} network", (String networkName) -> network = gateway.getNetwork(networkName));
@@ -323,13 +380,20 @@ public class ScenarioSteps implements En {
 
         When("I remove the contract listener", this::clearContractListener);
 
+        When("I put an identity named {string} into the wallet", (String label) -> {
+            Identity identity = newOrg1UserIdentity();
+            wallet.put(label, identity);
+        });
+
+        When("I remove an identity named {string} from the wallet", (String label) -> wallet.remove(label));
+
         Then("a response should be received", () -> transactionInvocation.getResponse());
 
         Then("the response should match {}",
                 (String expected) -> assertThat(transactionInvocation.getResponse()).isEqualTo(expected));
 
-        Then("the response should be JSON matching", (String expected) -> {
-            try (JsonReader expectedReader = createJsonReader(expected);
+        Then("the response should be JSON matching", (DocString expected) -> {
+            try (JsonReader expectedReader = createJsonReader(expected.getContent());
                  JsonReader actualReader = createJsonReader(transactionInvocation.getResponse())) {
                 JsonObject expectedObject = expectedReader.readObject();
                 JsonObject actualObject = actualReader.readObject();
@@ -351,6 +415,33 @@ public class ScenarioSteps implements En {
         Then("a block event should be received", this::getBlockEvent);
 
         Then("a contract event with payload {string} should be received", this::getContractEvent);
+
+        Then("the wallet should contain {int} identities", (Integer number) -> {
+            Set<String> labels = wallet.list();
+            assertThat(labels).hasSize(number);
+        });
+
+        Then("the wallet should contain an identity named {string}", (String label) -> {
+            Set<String> labels = wallet.list();
+            assertThat(labels).contains(label);
+        });
+
+        Then("I should be able to get an identity named {string} from the wallet", (String label) -> {
+            Identity identity = wallet.get(label);
+            Identity expected = newOrg1UserIdentity();
+            assertThat(identity).isEqualTo(expected);
+        });
+
+        Then("I should not be able to get an identity named {string} from the wallet", (String label) -> {
+            Identity identity = wallet.get(label);
+            assertThat(identity).isNull();
+        });
+    }
+
+    private void emptyWallet() throws IOException {
+        for (String label : wallet.list()) {
+            wallet.remove(label);
+        }
     }
 
     private Checkpointer fileCheckpointer() throws IOException {
@@ -435,51 +526,62 @@ public class ScenarioSteps implements En {
         return element;
     }
 
-    private static void exec(List<String> commandArgs) throws IOException, InterruptedException {
-        exec(null, commandArgs);
+    private static String exec(List<String> commandArgs) throws IOException, InterruptedException {
+        return exec(null, commandArgs);
     }
 
-    private static void exec(Path dir, List<String> commandArgs) throws IOException, InterruptedException {
-        exec(dir, commandArgs.toArray(new String[0]));
+    private static String exec(Path dir, List<String> commandArgs) throws IOException, InterruptedException {
+        return exec(dir, commandArgs.toArray(new String[0]));
     }
 
-    private static void exec(String... commandArgs) throws IOException, InterruptedException {
-        exec(null, commandArgs);
+    private static String exec(String... commandArgs) throws IOException, InterruptedException {
+        return exec(null, commandArgs);
     }
 
-    private static void exec(Path dir, String... commandArgs) throws IOException, InterruptedException {
+    private static String exec(Path dir, String... commandArgs) throws IOException, InterruptedException {
         String commandString = String.join(" ", commandArgs);
         System.err.println(commandString);
+        StringBuilder sb = new StringBuilder();
 
         File dirFile = dir != null ? dir.toFile() : null;
         Process process = Runtime.getRuntime().exec(commandArgs, null, dirFile);
         int exitCode = process.waitFor();
 
         // get STDERR for the process and print it
-        InputStream errorStream = process.getErrorStream();
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(errorStream))) {
+        try (InputStream errorStream = process.getErrorStream();
+             BufferedReader reader = new BufferedReader(new InputStreamReader(errorStream))) {
             for (String line; (line = reader.readLine()) != null; ) {
                 System.err.println(line);
+                sb.append(line);
             }
         }
+
+        // get STDOUT for the process and print it
+        try (InputStream inputStream = process.getInputStream();
+             BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {
+            for (String line; (line = reader.readLine()) != null;) {
+                System.out.println(line);
+                sb.append(line);
+            }
+        }
+
 
         assertThat(exitCode)
                 .withFailMessage("Failed to execute command: %s",commandString)
                 .isEqualTo(0);
+        return sb.toString();
     }
 
     static void startFabric(boolean tls) throws Exception {
         createCryptoMaterial();
-        String yaml = tls ? "docker-compose-tls.yaml" : "docker-compose.yaml";
-        String dockerComposeFile = Paths.get("src", "test", "fixtures", "docker-compose", yaml).toString();
-        exec("docker-compose", "-f", dockerComposeFile, "-p", "node", "up", "-d");
+        String dockerComposeFile = tls ? DOCKER_COMPOSE_TLS_FILE : DOCKER_COMPOSE_FILE;
+        exec(DOCKER_COMPOSE_DIR, "docker-compose", "-f", dockerComposeFile, "-p", "node", "up", "-d");
         Thread.sleep(10000);
     }
 
     static void stopFabric(boolean tls) throws Exception {
-        String yaml = tls ? "docker-compose-tls.yaml" : "docker-compose.yaml";
-        Path dockerCompose = Paths.get("src", "test", "fixtures", "docker-compose", yaml);
-        exec("docker-compose", "-f", dockerCompose.toAbsolutePath().toString(), "-p", "node", "down");
+        String dockerComposeFile = tls ? DOCKER_COMPOSE_TLS_FILE : DOCKER_COMPOSE_FILE;
+        exec(DOCKER_COMPOSE_DIR, "docker-compose", "-f", dockerComposeFile, "-p", "node", "down");
     }
 
     private static void createCryptoMaterial() throws Exception {
@@ -487,15 +589,43 @@ public class ScenarioSteps implements En {
         exec(fixtures, "./generate.sh");
     }
 
-    private static Wallet createWallet() throws IOException, GatewayException {
+    private void populateWallet() throws IOException, CertificateException, InvalidKeyException {
+        Identity identity = newOrg1UserIdentity();
+        wallet.put("User1", identity);
+    }
+
+    private void prepareGateway(String tlsType) throws IOException {
+        gatewayBuilder = Gateway.createBuilder();
+        gatewayBuilder.networkConfig(getNetworkConfigPath(tlsType));
+        gatewayBuilder.commitTimeout(1, TimeUnit.MINUTES);
+        if (tlsType.equals("discovery")) {
+            gatewayBuilder.discovery(true);
+        }
+    }
+
+    private static Identity newOrg1UserIdentity() throws IOException, CertificateException, InvalidKeyException {
         Path credentialPath = Paths.get("src", "test", "fixtures", "crypto-material", "crypto-config",
                 "peerOrganizations", "org1.example.com", "users", "User1@org1.example.com", "msp");
-        Path certificatePem = credentialPath.resolve(Paths.get("signcerts", "User1@org1.example.com-cert.pem"));
-        Path privateKey = credentialPath.resolve(Paths.get("keystore", "key.pem"));
-        Wallet wallet = Wallet.createInMemoryWallet();
-        wallet.put("User1", Wallet.Identity.createIdentity("Org1MSP",
-                Files.newBufferedReader(certificatePem), Files.newBufferedReader(privateKey)));
-        return wallet;
+
+        Path certificatePath = credentialPath.resolve(Paths.get("signcerts", "User1@org1.example.com-cert.pem"));
+        X509Certificate certificate = readX509Certificate(certificatePath);
+
+        Path privateKeyPath = credentialPath.resolve(Paths.get("keystore", "key.pem"));
+        PrivateKey privateKey = getPrivateKey(privateKeyPath);
+
+        return Identities.newX509Identity("Org1MSP", certificate, privateKey);
+    }
+
+    private static X509Certificate readX509Certificate(final Path certificatePath) throws IOException, CertificateException {
+        try (Reader certificateReader = Files.newBufferedReader(certificatePath, StandardCharsets.UTF_8)) {
+            return Identities.readX509Certificate(certificateReader);
+        }
+    }
+
+    private static PrivateKey getPrivateKey(final Path privateKeyPath) throws IOException, InvalidKeyException {
+        try (Reader privateKeyReader = Files.newBufferedReader(privateKeyPath, StandardCharsets.UTF_8)) {
+            return Identities.readPrivateKey(privateKeyReader);
+        }
     }
 
     private BlockEvent getBlockEvent() throws InterruptedException {
