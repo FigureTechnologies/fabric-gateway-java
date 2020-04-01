@@ -46,6 +46,7 @@ allprojects {
     }
 
     dependencies {
+
         compile "org.hyperledger.fabric-sdk-java:fabric-sdk-java:$fabric_sdk_java_version"
         compile "com.cloudant:cloudant-client:2.18.0"
 
