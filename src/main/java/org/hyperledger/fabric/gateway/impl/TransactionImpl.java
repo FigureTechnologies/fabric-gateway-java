@@ -103,13 +103,22 @@ public final class TransactionImpl implements Transaction {
     }
 
     private TransactionResponse createSubmit(final UUID correlationId, @Nullable final User userContext, final String... args) throws ContractException, TimeoutException, InterruptedException {
+            Collection<ProposalResponse> proposalResponses = endorseTransaction(userContext, args);
+            Collection<ProposalResponse> validResponses = validatePeerResponses(proposalResponses);
+
+        try {
+            byte[] result = commitTransaction(validResponses);
+            return new TransactionResponse(correlationId, proposalResponses.iterator().next().getTransactionID(), result);
+        } catch (ContractException e) {
+            e.setProposalResponses(proposalResponses);
+            throw e;
+        }
+    }
+
+    private Collection<ProposalResponse> endorseTransaction(final User userContext, final String... args) {
         try {
             TransactionProposalRequest request = newProposalRequest(userContext, args);
-            Collection<ProposalResponse> proposalResponses = sendTransactionProposal(request);
-
-            byte[] result = commitTransaction(proposalResponses);
-
-            return new TransactionResponse(correlationId, proposalResponses.iterator().next().getTransactionID(), result);
+            return sendTransactionProposal(request);
         } catch (InvalidArgumentException | ProposalException | ServiceDiscoveryException e) {
             throw new GatewayRuntimeException(e);
         }
@@ -141,7 +150,9 @@ public final class TransactionImpl implements Transaction {
                     .setEndorsementSelector(ServiceDiscovery.EndorsementSelector.ENDORSEMENT_SELECTION_RANDOM)
                     .setInspectResults(true)
                     .setForceDiscovery(true);
-            return retryProposal(request, discoveryOptions);
+            //return retryProposal(request, discoveryOptions);
+            return channel.sendTransactionProposalToEndorsers(request, discoveryOptions);
+
         } else {
             return channel.sendTransactionProposal(request);
         }

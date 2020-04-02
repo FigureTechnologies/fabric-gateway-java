@@ -34,7 +34,7 @@ allprojects {
         jcenter()
         maven { url "https://digitalassetsdk.bintray.com/DigitalAssetSDK" }
         maven { url "https://oss.sonatype.org/content/repositories/snapshots" }
-        maven { url "http://repo.maven.apache.org/maven2" }
+        maven { url "https://repo.maven.apache.org/maven2" }
 
         maven {
             url "https://nexus.figure.com/repository/figure"
