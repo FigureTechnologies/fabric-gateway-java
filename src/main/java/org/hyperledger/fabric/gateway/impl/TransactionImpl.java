@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.stream.Collectors;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -233,9 +234,11 @@ public final class TransactionImpl implements Transaction {
         });
 
         if (validResponses.size() < 1) {
+            /* De dup response and only log warn */
+            String responseMsgs = invalidResponseMsgs.stream().distinct().collect(Collectors.joining("; "));
             String msg = String.format("No valid proposal responses received. %d peer error responses: %s",
-                    invalidResponseMsgs.size(), String.join("; ", invalidResponseMsgs));
-            LOG.error(msg);
+                    invalidResponseMsgs.size(), responseMsgs);
+            LOG.warn(msg);
             throw new ContractException(msg, proposalResponses);
         }
 
